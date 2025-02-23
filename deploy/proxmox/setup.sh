@@ -202,7 +202,9 @@ header_info
 
 # Check for Ubuntu template
 msg_info "Checking for Ubuntu 22.04 LXC template..."
-TEMPLATE_PATH="/var/lib/vz/template/cache/ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
+TEMPLATE_NAME="ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
+TEMPLATE_PATH="/var/lib/vz/template/cache/$TEMPLATE_NAME"
+
 if [ ! -f "$TEMPLATE_PATH" ]; then
     msg_info "Downloading Ubuntu 22.04 LXC template..."
     
@@ -215,19 +217,32 @@ if [ ! -f "$TEMPLATE_PATH" ]; then
     fi
     
     # List available templates for debugging
-    if [ "$DEBUG" = true ]; then
-        msg_debug "Available templates:"
-        pveam available -section system | grep -i ubuntu
+    msg_debug "Available templates:"
+    pveam available | grep -i ubuntu
+    
+    # Find the exact template name
+    AVAILABLE_TEMPLATE=$(pveam available | grep -i "ubuntu-22.04-standard" | head -n1 | awk '{print $2}')
+    
+    if [ -z "$AVAILABLE_TEMPLATE" ]; then
+        msg_error "Could not find Ubuntu 22.04 template"
+        msg_debug "Available Ubuntu templates:"
+        pveam available | grep -i ubuntu
+        exit 1
     fi
+    
+    msg_debug "Found template: $AVAILABLE_TEMPLATE"
     
     # Try to download the template with error handling
     msg_debug "Downloading template..."
-    if ! pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.gz; then
+    if ! pveam download local "$AVAILABLE_TEMPLATE"; then
         msg_error "Failed to download Ubuntu template"
-        msg_debug "Available templates:"
-        pveam available -section system | grep -i ubuntu
+        msg_debug "Command failed: pveam download local $AVAILABLE_TEMPLATE"
+        msg_debug "Try downloading manually or check storage configuration"
         exit 1
     fi
+    
+    # Update template path with actual name
+    TEMPLATE_PATH="/var/lib/vz/template/cache/$AVAILABLE_TEMPLATE"
     
     # Verify the download
     if [ ! -f "$TEMPLATE_PATH" ]; then
@@ -244,7 +259,7 @@ if ! tar -tzf "$TEMPLATE_PATH" >/dev/null 2>&1; then
     msg_error "Template file is corrupted"
     msg_debug "Try removing and redownloading:"
     msg_debug "rm $TEMPLATE_PATH"
-    msg_debug "pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
+    msg_debug "pveam download local $AVAILABLE_TEMPLATE"
     exit 1
 fi
 
