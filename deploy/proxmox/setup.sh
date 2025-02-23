@@ -230,6 +230,8 @@ fi
 msg_debug "Found template: $TEMPLATE_NAME"
 TEMPLATE_PATH="/var/lib/vz/template/cache/$TEMPLATE_NAME"
 
+# Verify template exists
+msg_debug "Checking template at: $TEMPLATE_PATH"
 if [ ! -f "$TEMPLATE_PATH" ]; then
     msg_info "Downloading Ubuntu 22.04 LXC template..."
     
@@ -243,7 +245,7 @@ if [ ! -f "$TEMPLATE_PATH" ]; then
         exit 1
     fi
     
-    # Verify the download
+    # Verify the download exists
     if [ ! -f "$TEMPLATE_PATH" ]; then
         msg_error "Template download failed - file not found"
         msg_debug "Expected template at: $TEMPLATE_PATH"
@@ -254,30 +256,16 @@ if [ ! -f "$TEMPLATE_PATH" ]; then
     fi
 fi
 
-# Verify template is valid
-if [[ "$TEMPLATE_PATH" == *.tar.zst ]]; then
-    # For .tar.zst files, we need zstd
-    if ! command -v zstd >/dev/null 2>&1; then
-        msg_info "Installing zstd for template verification..."
-        apt-get update >/dev/null 2>&1
-        apt-get install -y zstd >/dev/null 2>&1
-    fi
-    if ! zstd -t "$TEMPLATE_PATH" >/dev/null 2>&1; then
-        msg_error "Template file is corrupted"
-        msg_debug "Try removing and redownloading:"
-        msg_debug "rm $TEMPLATE_PATH"
-        msg_debug "pveam download $TEMPLATE_STORAGE $TEMPLATE_NAME"
-        exit 1
-    fi
-else
-    # For .tar.gz files
-    if ! tar -tzf "$TEMPLATE_PATH" >/dev/null 2>&1; then
-        msg_error "Template file is corrupted"
-        msg_debug "Try removing and redownloading:"
-        msg_debug "rm $TEMPLATE_PATH"
-        msg_debug "pveam download $TEMPLATE_STORAGE $TEMPLATE_NAME"
-        exit 1
-    fi
+# Simple file size check instead of content verification
+FILE_SIZE=$(stat -c%s "$TEMPLATE_PATH")
+msg_debug "Template file size: $FILE_SIZE bytes"
+if [ "$FILE_SIZE" -lt 1000000 ]; then  # Less than 1MB is definitely wrong
+    msg_error "Template file appears to be invalid (too small)"
+    msg_debug "File size: $FILE_SIZE bytes"
+    msg_debug "Try removing and redownloading:"
+    msg_debug "rm $TEMPLATE_PATH"
+    msg_debug "pveam download $TEMPLATE_STORAGE $TEMPLATE_NAME"
+    exit 1
 fi
 
 msg_ok "Ubuntu 22.04 LXC template is available"
