@@ -202,53 +202,53 @@ header_info
 
 # Check for Ubuntu template
 msg_info "Checking for Ubuntu 22.04 LXC template..."
-TEMPLATE_NAME="ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
+
+# Update template list with error handling
+msg_debug "Updating template list..."
+if ! pveam update 2>&1; then
+    msg_error "Failed to update template list"
+    msg_debug "Try running: pveam update"
+    exit 1
+fi
+
+# List available templates for debugging
+msg_debug "Available templates:"
+pveam available -section system | grep -i ubuntu
+
+# Find the exact template name
+TEMPLATE_STORAGE="local"
+TEMPLATE_SECTION="system"
+TEMPLATE_NAME=$(pveam available -section system | grep -i "ubuntu.*22\.04.*standard" | head -n1 | awk '{print $2}')
+
+if [ -z "$TEMPLATE_NAME" ]; then
+    msg_error "Could not find Ubuntu 22.04 template"
+    msg_debug "Available Ubuntu templates:"
+    pveam available -section system | grep -i ubuntu
+    exit 1
+fi
+
+msg_debug "Found template: $TEMPLATE_NAME"
 TEMPLATE_PATH="/var/lib/vz/template/cache/$TEMPLATE_NAME"
 
 if [ ! -f "$TEMPLATE_PATH" ]; then
     msg_info "Downloading Ubuntu 22.04 LXC template..."
     
-    # Update template list with error handling
-    msg_debug "Updating template list..."
-    if ! pveam update 2>&1; then
-        msg_error "Failed to update template list"
-        msg_debug "Try running: pveam update"
-        exit 1
-    fi
-    
-    # List available templates for debugging
-    msg_debug "Available templates:"
-    pveam available | grep -i ubuntu
-    
-    # Find the exact template name
-    AVAILABLE_TEMPLATE=$(pveam available | grep -i "ubuntu-22.04-standard" | head -n1 | awk '{print $2}')
-    
-    if [ -z "$AVAILABLE_TEMPLATE" ]; then
-        msg_error "Could not find Ubuntu 22.04 template"
-        msg_debug "Available Ubuntu templates:"
-        pveam available | grep -i ubuntu
-        exit 1
-    fi
-    
-    msg_debug "Found template: $AVAILABLE_TEMPLATE"
-    
     # Try to download the template with error handling
-    msg_debug "Downloading template..."
-    if ! pveam download local "$AVAILABLE_TEMPLATE"; then
+    msg_debug "Running: pveam download $TEMPLATE_STORAGE $TEMPLATE_NAME"
+    if ! pveam download "$TEMPLATE_STORAGE" "$TEMPLATE_NAME"; then
         msg_error "Failed to download Ubuntu template"
-        msg_debug "Command failed: pveam download local $AVAILABLE_TEMPLATE"
-        msg_debug "Try downloading manually or check storage configuration"
+        msg_debug "Command failed: pveam download $TEMPLATE_STORAGE $TEMPLATE_NAME"
+        msg_debug "Available templates in section $TEMPLATE_SECTION:"
+        pveam available -section "$TEMPLATE_SECTION" | grep -i ubuntu
         exit 1
     fi
-    
-    # Update template path with actual name
-    TEMPLATE_PATH="/var/lib/vz/template/cache/$AVAILABLE_TEMPLATE"
     
     # Verify the download
     if [ ! -f "$TEMPLATE_PATH" ]; then
         msg_error "Template download failed - file not found"
         msg_debug "Expected template at: $TEMPLATE_PATH"
         msg_debug "Storage location might be incorrect or insufficient permissions"
+        msg_debug "Template cache contents:"
         ls -l /var/lib/vz/template/cache/
         exit 1
     fi
@@ -259,7 +259,7 @@ if ! tar -tzf "$TEMPLATE_PATH" >/dev/null 2>&1; then
     msg_error "Template file is corrupted"
     msg_debug "Try removing and redownloading:"
     msg_debug "rm $TEMPLATE_PATH"
-    msg_debug "pveam download local $AVAILABLE_TEMPLATE"
+    msg_debug "pveam download $TEMPLATE_STORAGE $TEMPLATE_NAME"
     exit 1
 fi
 
