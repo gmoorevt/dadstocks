@@ -9,6 +9,7 @@ shopt -s inherit_errexit nullglob
 APP_VERSION="v1.0.0-alpha"
 GITHUB_REPO="https://github.com/gmoorevt/dadstocks"
 DOWNLOAD_URL="https://github.com/gmoorevt/dadstocks/archive/refs/tags/${APP_VERSION}.tar.gz"
+DEBUG=false
 
 # Colors
 RED='\033[0;31m'
@@ -77,6 +78,20 @@ msg_error() {
     local msg="$1"
     echo -e "${CROSS} ${RED}$msg${RESET}"
 }
+
+msg_debug() {
+    if [ "$DEBUG" = true ]; then
+        local msg="$1"
+        echo -e "${YELLOW}DEBUG: $msg${RESET}"
+    fi
+}
+
+# Check if debug mode is enabled
+if [ "${DEBUG_SCRIPT:-false}" = "true" ]; then
+    DEBUG=true
+    set -x  # Enable command tracing
+    msg_info "Debug mode enabled"
+fi
 
 # Check if script is running on Proxmox
 if [ ! -f "/etc/pve/local/pve-ssl.key" ]; then
@@ -230,11 +245,14 @@ msg_ok "Docker Compose installed"
 
 # Deploy application
 msg_info "Deploying application..."
-pct exec $CT_ID -- bash -c "mkdir -p /opt/dadstocks && \
+if ! run_in_container $CT_ID "mkdir -p /opt/dadstocks && \
     cd /opt/dadstocks && \
     wget -q ${DOWNLOAD_URL} -O app.tar.gz && \
     tar xzf app.tar.gz --strip-components=1 && \
-    rm app.tar.gz" >/dev/null 2>&1
+    rm app.tar.gz" "Failed to deploy application"; then
+    msg_debug "Failed to download from: ${DOWNLOAD_URL}"
+    exit 1
+fi
 msg_ok "Application deployed"
 
 # Get Alpaca API credentials
@@ -249,7 +267,7 @@ ADMIN_PASSWORD=$(openssl rand -base64 12)
 
 # Configure application
 msg_info "Configuring application..."
-pct exec $CT_ID -- bash -c "cat > /opt/dadstocks/.env << EOL
+if ! run_in_container $CT_ID "cat > /opt/dadstocks/.env << EOL
 FLASK_ENV=production
 FLASK_DEBUG=0
 SECRET_KEY=$SECRET_KEY
@@ -259,11 +277,13 @@ ALPACA_API_KEY=$ALPACA_API_KEY
 ALPACA_SECRET_KEY=$ALPACA_SECRET_KEY
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=$ADMIN_PASSWORD
-EOL"
+EOL" "Failed to create .env file"; then
+    exit 1
+fi
 
 # Configure Nginx
 msg_info "Configuring Nginx..."
-pct exec $CT_ID -- bash -c "cat > /etc/nginx/sites-available/dadstocks << EOL
+if ! run_in_container $CT_ID "cat > /etc/nginx/sites-available/dadstocks << EOL
 server {
     listen 80;
     server_name _;
@@ -276,17 +296,36 @@ server {
         proxy_set_header X-Forwarded-Proto \\\$scheme;
     }
 }
-EOL"
+EOL" "Failed to create Nginx configuration"; then
+    exit 1
+fi
 
-pct exec $CT_ID -- bash -c "ln -sf /etc/nginx/sites-available/dadstocks /etc/nginx/sites-enabled/ && \
+if ! run_in_container $CT_ID "ln -sf /etc/nginx/sites-available/dadstocks /etc/nginx/sites-enabled/ && \
     rm -f /etc/nginx/sites-enabled/default && \
-    systemctl restart nginx" >/dev/null 2>&1
+    systemctl restart nginx" "Failed to enable Nginx configuration"; then
+    exit 1
+fi
 msg_ok "Nginx configured"
 
 # Start application
 msg_info "Starting application..."
-pct exec $CT_ID -- bash -c "cd /opt/dadstocks && docker-compose up -d" >/dev/null 2>&1
+if ! run_in_container $CT_ID "cd /opt/dadstocks && docker-compose up -d" "Failed to start application"; then
+    msg_debug "Docker Compose failed. Checking Docker status..."
+    run_in_container $CT_ID "systemctl status docker" "Unable to check Docker status"
+    run_in_container $CT_ID "docker ps" "Unable to list Docker containers"
+    exit 1
+fi
 msg_ok "Application started"
+
+# Verify application is accessible
+msg_info "Verifying application..."
+sleep 5
+if ! run_in_container $CT_ID "curl -s -f http://localhost:5001/" "Application is not responding"; then
+    msg_debug "Application failed to respond. Checking logs..."
+    run_in_container $CT_ID "docker-compose -f /opt/dadstocks/docker-compose.yml logs" "Unable to fetch logs"
+    exit 1
+fi
+msg_ok "Application is running"
 
 # Print completion message
 echo -e "\n${GREEN}╔═══════════════════════════════════════════════════════════════╗${RESET}"
