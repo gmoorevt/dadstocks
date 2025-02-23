@@ -255,12 +255,29 @@ if [ ! -f "$TEMPLATE_PATH" ]; then
 fi
 
 # Verify template is valid
-if ! tar -tzf "$TEMPLATE_PATH" >/dev/null 2>&1; then
-    msg_error "Template file is corrupted"
-    msg_debug "Try removing and redownloading:"
-    msg_debug "rm $TEMPLATE_PATH"
-    msg_debug "pveam download $TEMPLATE_STORAGE $TEMPLATE_NAME"
-    exit 1
+if [[ "$TEMPLATE_PATH" == *.tar.zst ]]; then
+    # For .tar.zst files, we need zstd
+    if ! command -v zstd >/dev/null 2>&1; then
+        msg_info "Installing zstd for template verification..."
+        apt-get update >/dev/null 2>&1
+        apt-get install -y zstd >/dev/null 2>&1
+    fi
+    if ! zstd -t "$TEMPLATE_PATH" >/dev/null 2>&1; then
+        msg_error "Template file is corrupted"
+        msg_debug "Try removing and redownloading:"
+        msg_debug "rm $TEMPLATE_PATH"
+        msg_debug "pveam download $TEMPLATE_STORAGE $TEMPLATE_NAME"
+        exit 1
+    fi
+else
+    # For .tar.gz files
+    if ! tar -tzf "$TEMPLATE_PATH" >/dev/null 2>&1; then
+        msg_error "Template file is corrupted"
+        msg_debug "Try removing and redownloading:"
+        msg_debug "rm $TEMPLATE_PATH"
+        msg_debug "pveam download $TEMPLATE_STORAGE $TEMPLATE_NAME"
+        exit 1
+    fi
 fi
 
 msg_ok "Ubuntu 22.04 LXC template is available"
