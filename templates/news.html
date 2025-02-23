@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Stock News</h1>
+            <p class="text-sm text-gray-600">Latest news for your tracked stocks</p>
+        </div>
+        <a href="{{ url_for('index') }}" class="text-blue-500 hover:text-blue-700 font-medium">
+            ← Back to Dashboard
+        </a>
+    </div>
+
+    {% if not articles_by_stock %}
+        <div class="bg-gray-50 rounded-lg p-6 text-center">
+            <p class="text-gray-600">No news articles found for your tracked stocks.</p>
+        </div>
+    {% else %}
+        <div class="space-y-8">
+            {% for symbol, articles in articles_by_stock.items() %}
+                <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                    <div class="bg-gray-50 px-6 py-4 border-b">
+                        <h2 class="text-xl font-bold text-gray-800">{{ symbol }}</h2>
+                    </div>
+                    <div class="divide-y">
+                        {% for article in articles[:5] %}
+                            <article class="p-6 hover:bg-gray-50 transition-colors">
+                                <div class="flex items-start gap-4">
+                                    {% if article.images %}
+                                        <img src="{{ article.images[0].url }}" 
+                                             alt="Article thumbnail"
+                                             class="w-24 h-24 object-cover rounded-lg flex-shrink-0">
+                                    {% endif %}
+                                    <div class="flex-grow">
+                                        <h3 class="text-lg font-semibold text-gray-900 mb-1">
+                                            <a href="javascript:void(0)" 
+                                               class="article-link hover:text-blue-600"
+                                               data-url="{{ article.url }}"
+                                               data-title="{{ article.headline }}">
+                                                {{ article.headline }}
+                                            </a>
+                                        </h3>
+                                        <p class="text-gray-600 text-sm mb-2">{{ article.summary }}</p>
+                                        <div class="flex items-center gap-4 text-sm text-gray-500">
+                                            <span>{{ article.author }}</span>
+                                            <span>{{ article.updated_at.split('T')[0] }}</span>
+                                            <a href="javascript:void(0)" 
+                                               class="article-link text-blue-500 hover:text-blue-700"
+                                               data-url="{{ article.url }}"
+                                               data-title="{{ article.headline }}">
+                                                Read more →
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+
+<!-- Modal -->
+<div id="articleModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
+    <div class="bg-white w-full max-w-6xl h-[90vh] rounded-lg shadow-xl flex flex-col relative">
+        <div class="flex justify-between items-center p-4 border-b bg-white rounded-t-lg sticky top-0 z-10">
+            <h2 id="modalTitle" class="text-xl font-bold text-gray-800 truncate pr-8"></h2>
+            <button onclick="closeArticleModal()" class="text-gray-500 hover:text-gray-700 focus:outline-none">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="flex-grow relative bg-white">
+            <iframe id="articleFrame" 
+                    class="w-full h-full"
+                    frameborder="0"
+                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                    loading="lazy"
+                    referrerpolicy="no-referrer">
+            </iframe>
+            <div id="iframeError" class="hidden absolute inset-0 flex items-center justify-center flex-col p-8 text-center">
+                <p class="text-gray-800 mb-4">This article cannot be displayed in the preview window due to website restrictions.</p>
+                <a id="directLink" href="#" target="_blank" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    Open Article in New Window
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openArticleModal(url, title) {
+    const modal = document.getElementById('articleModal');
+    const iframe = document.getElementById('articleFrame');
+    const modalTitle = document.getElementById('modalTitle');
+    const errorDiv = document.getElementById('iframeError');
+    const directLink = document.getElementById('directLink');
+    
+    // Reset state
+    errorDiv.classList.add('hidden');
+    iframe.classList.remove('hidden');
+    
+    // Show loading state
+    modalTitle.textContent = 'Loading...';
+    
+    // Show the modal
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    
+    // Set up iframe
+    iframe.onload = function() {
+        modalTitle.textContent = title;
+        // Check if the iframe loaded successfully
+        try {
+            // Try to access iframe content - will throw error if blocked
+            const iframeContent = iframe.contentWindow.document;
+            if (!iframeContent) throw new Error('Cannot access iframe content');
+        } catch (e) {
+            // Show error message and direct link
+            iframe.classList.add('hidden');
+            errorDiv.classList.remove('hidden');
+            directLink.onclick = function(event) {
+                event.preventDefault();
+                const width = Math.min(1200, window.screen.width * 0.9);
+                const height = window.screen.height * 0.9;
+                const left = (window.screen.width - width) / 2;
+                const top = (window.screen.height - height) / 2;
+                window.open(url, 'newsWindow', 
+                    `width=${width},height=${height},left=${left},top=${top},` +
+                    'menubar=no,toolbar=no,location=yes,status=yes,scrollbars=yes'
+                );
+            };
+        }
+    };
+
+    iframe.onerror = function() {
+        // Handle iframe loading error
+        iframe.classList.add('hidden');
+        errorDiv.classList.remove('hidden');
+        directLink.onclick = function(event) {
+            event.preventDefault();
+            const width = Math.min(1200, window.screen.width * 0.9);
+            const height = window.screen.height * 0.9;
+            const left = (window.screen.width - width) / 2;
+            const top = (window.screen.height - height) / 2;
+            window.open(url, 'newsWindow', 
+                `width=${width},height=${height},left=${left},top=${top},` +
+                'menubar=no,toolbar=no,location=yes,status=yes,scrollbars=yes'
+            );
+        };
+    };
+
+    iframe.src = url;
+    
+    // Prevent body scrolling
+    document.body.style.overflow = 'hidden';
+}
+
+function closeArticleModal() {
+    const modal = document.getElementById('articleModal');
+    const iframe = document.getElementById('articleFrame');
+    const errorDiv = document.getElementById('iframeError');
+    
+    // Reset state
+    iframe.src = 'about:blank';
+    iframe.classList.remove('hidden');
+    errorDiv.classList.add('hidden');
+    
+    // Hide the modal
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    
+    // Restore body scrolling
+    document.body.style.overflow = 'auto';
+}
+
+// Add click handlers to all article links
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.article-link').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const url = this.getAttribute('data-url');
+            const title = this.getAttribute('data-title');
+            openArticleModal(url, title);
+        });
+    });
+});
+
+// Close modal when clicking outside
+document.getElementById('articleModal').addEventListener('click', function(event) {
+    if (event.target === this) {
+        closeArticleModal();
+    }
+});
+
+// Close modal on escape key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeArticleModal();
+    }
+});
+</script>
+{% endblock %} 

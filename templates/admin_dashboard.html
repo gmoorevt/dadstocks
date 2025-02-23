@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold mb-8">Admin Dashboard</h1>
+    
+    <!-- Simulation Mode Toggle -->
+    <div class="bg-white shadow rounded-lg p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4">Simulation Mode</h2>
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-gray-600">Current Status: 
+                    <span class="font-semibold {% if config.SIMULATION_MODE.lower() == 'true' %}text-green-600{% else %}text-blue-600{% endif %}">
+                        {{ "Enabled" if config.SIMULATION_MODE.lower() == 'true' else "Disabled" }}
+                    </span>
+                </p>
+                <p class="text-sm text-gray-500 mt-2">When enabled, the application will use simulated stock data instead of real Alpaca API data.</p>
+            </div>
+            <form method="post" action="{{ url_for('toggle_simulation') }}" class="flex items-center">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+                    {{ "Disable" if config.SIMULATION_MODE.lower() == 'true' else "Enable" }} Simulation
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- API Credentials Section -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <h2 class="text-xl font-semibold mb-4">Alpaca API Credentials</h2>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4" role="alert">
+                        <span class="block sm:inline">{{ message }}</span>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <form method="post" action="{{ url_for('update_credentials') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="api_key">
+                    API Key
+                </label>
+                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                       id="api_key"
+                       name="api_key"
+                       type="text"
+                       value="{{ api_key if api_key }}"
+                       placeholder="Enter your Alpaca API Key">
+            </div>
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="secret_key">
+                    Secret Key
+                </label>
+                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                       id="secret_key"
+                       name="secret_key"
+                       type="text"
+                       value="{{ secret_key if secret_key }}"
+                       placeholder="Enter your Alpaca Secret Key">
+            </div>
+            <div class="flex items-center justify-between">
+                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                        type="submit">
+                    Update Credentials
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %} 

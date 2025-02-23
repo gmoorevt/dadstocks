@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dad's Glasses -->
+  <g transform="translate(2, 8) scale(0.1)">
+    <!-- Left Lens -->
+    <ellipse cx="60" cy="60" rx="30" ry="25" 
+             fill="none" 
+             stroke="#333333" 
+             stroke-width="12"/>
+    
+    <!-- Right Lens -->
+    <ellipse cx="140" cy="60" rx="30" ry="25" 
+             fill="none" 
+             stroke="#333333" 
+             stroke-width="12"/>
+    
+    <!-- Bridge -->
+    <path d="M 90 60 L 110 60" 
+          stroke="#333333" 
+          stroke-width="12" 
+          stroke-linecap="round"/>
+    
+    <!-- Temple Arms -->
+    <path d="M 30 60 L 15 55" 
+          stroke="#333333" 
+          stroke-width="12" 
+          stroke-linecap="round"/>
+    <path d="M 170 60 L 185 55" 
+          stroke="#333333" 
+          stroke-width="12" 
+          stroke-linecap="round"/>
+  </g>
+  
+  <!-- Stock Chart Line -->
+  <path d="M 4 24 C 8 22, 12 16, 16 14 S 24 10, 28 8" 
+        stroke="#2E7D32" 
+        stroke-width="2" 
+        fill="none" 
+        stroke-linecap="round"/>
+</svg> 
