@@ -7,7 +7,8 @@ shopt -s inherit_errexit nullglob
 
 # Set version
 APP_VERSION="v1.0.0-alpha"
-GITHUB_REPO="https://github.com/gmoorevt/dadstocks.git"
+GITHUB_REPO="https://github.com/gmoorevt/dadstocks"
+DOWNLOAD_URL="https://github.com/gmoorevt/dadstocks/archive/refs/tags/${APP_VERSION}.tar.gz"
 
 # Colors
 RED='\033[0;31m'
@@ -90,7 +91,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Check for required tools
-for cmd in pct wget curl git; do
+for cmd in pct wget curl; do
     if ! command -v $cmd >/dev/null 2>&1; then
         msg_error "$cmd is required but not installed"
         exit 1
@@ -208,7 +209,6 @@ pct exec $CT_ID -- bash -c "apt-get update && \
     curl \
     gnupg \
     lsb-release \
-    git \
     python3-pip \
     python3-venv \
     nginx" >/dev/null 2>&1
@@ -232,8 +232,9 @@ msg_ok "Docker Compose installed"
 msg_info "Deploying application..."
 pct exec $CT_ID -- bash -c "mkdir -p /opt/dadstocks && \
     cd /opt/dadstocks && \
-    git clone $GITHUB_REPO . && \
-    git checkout $APP_VERSION" >/dev/null 2>&1
+    wget -q ${DOWNLOAD_URL} -O app.tar.gz && \
+    tar xzf app.tar.gz --strip-components=1 && \
+    rm app.tar.gz" >/dev/null 2>&1
 msg_ok "Application deployed"
 
 # Get Alpaca API credentials
