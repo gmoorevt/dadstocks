@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify, request, redirect, url_for, flash, session
-from models import db, Stock, APICredential
+from models import db, Stock, APICredential, User, UserStock
 from config import Config
 from datetime import datetime, timedelta, timezone
 import threading
@@ -45,32 +45,14 @@ def create_app():
         if isinstance(simulation_mode, str):
             simulation_mode = simulation_mode.lower() == 'true'
         
-        api_key = app.config.get('ALPACA_API_KEY')
-        secret_key = app.config.get('ALPACA_SECRET_KEY')
-        
-        alpaca_factory.initialize(
-            simulation_mode=simulation_mode,
-            api_key=api_key,
-            secret_key=secret_key
-        )
-        
+        # In simulation mode, we don't need real API credentials
         if simulation_mode:
             app.logger.info("Running in simulation mode")
-            # Add default stocks in simulation mode
-            with app.app_context():
-                default_stocks = ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'META']
-                for symbol in default_stocks:
-                    if not Stock.query.filter_by(symbol=symbol).first():
-                        stock = Stock(symbol=symbol)
-                        db.session.add(stock)
-                try:
-                    db.session.commit()
-                    app.logger.info("Added default stocks for simulation mode")
-                except Exception as e:
-                    db.session.rollback()
-                    app.logger.error(f"Error adding default stocks: {str(e)}")
+            alpaca_factory.initialize(simulation_mode=True)
         else:
             app.logger.info("Running with real Alpaca API")
+            # We'll get credentials per user when needed
+            alpaca_factory.initialize(simulation_mode=False)
         
         return alpaca_factory
     
@@ -83,12 +65,381 @@ def create_app():
 app = create_app()
 alpaca_factory = app.alpaca_factory
 
+def user_login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('user_id'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('user_id'):
+            return redirect(url_for('admin_login'))
+        user = User.query.get(session['user_id'])
+        if not user or not user.is_admin:
+            return redirect(url_for('admin_login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        user = User.query.filter_by(email=email).first()
+        if user and user.check_password(password):
+            session['user_id'] = user.id
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            return redirect(url_for('index'))
+        
+        flash('Invalid email or password', 'error')
+    
+    return render_template('splash.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        first_name = request.form.get('first_name')
+        last_name = request.form.get('last_name')
+        
+        if password != confirm_password:
+            flash('Passwords do not match', 'error')
+            return render_template('register.html')
+        
+        if User.query.filter_by(email=email).first():
+            flash('Email already registered', 'error')
+            return render_template('register.html')
+        
+        user = User(
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name
+        )
+        db.session.add(user)
+        db.session.commit()
+        
+        flash('Registration successful! Please log in.', 'success')
+        return redirect(url_for('login'))
+    
+    return render_template('register.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/', methods=['GET', 'POST'])
+@user_login_required
+def index():
+    form = CSRFForm()
+    user = User.query.get(session['user_id'])
+    
+    if request.method == 'POST' and form.validate():
+        symbol = request.form.get('symbol', '').strip().upper()
+        if symbol:
+            try:
+                # Check if stock already exists for this user
+                existing_stock = Stock.query.join(UserStock).filter(
+                    Stock.symbol == symbol,
+                    UserStock.user_id == user.id
+                ).first()
+                
+                if existing_stock:
+                    flash(f'Stock {symbol} is already being tracked', 'error')
+                else:
+                    # Get or create the stock
+                    stock = Stock.query.filter_by(symbol=symbol).first()
+                    if not stock:
+                        # Validate the symbol with Alpaca
+                        stock_data = get_stock_data([symbol])
+                        if not stock_data or symbol not in stock_data:
+                            raise ValueError(f"Could not fetch data for {symbol}")
+                        
+                        stock = Stock(symbol=symbol)
+                        db.session.add(stock)
+                    
+                    # Create user-stock association
+                    user_stock = UserStock(user_id=user.id, stock_id=stock.id)
+                    db.session.add(user_stock)
+                    db.session.commit()
+                    flash(f'Stock {symbol} added successfully', 'success')
+            except Exception as e:
+                flash(f'Error adding stock: {str(e)}', 'error')
+        else:
+            flash('Stock symbol is required', 'error')
+        return redirect(url_for('index'))
+    
+    # Get market indexes data
+    index_symbols = ['SPY', 'DIA', 'QQQ', 'IWM']
+    index_data = get_stock_data(index_symbols)
+    indexes = {symbol: index_data.get(symbol, {}) for symbol in index_symbols}
+    
+    # Get user's tracked stocks
+    user_stocks = UserStock.query.filter_by(user_id=user.id).all()
+    
+    # Get news for all symbols
+    all_symbols = [us.stock.symbol for us in user_stocks] + index_symbols
+    news_articles = get_news_for_symbols(all_symbols)
+    
+    # Create a set of symbols that have news
+    symbols_with_news = set()
+    for article in news_articles:
+        symbols_with_news.update(article.get('symbols', []))
+    
+    # Add has_news flag to each stock
+    for user_stock in user_stocks:
+        user_stock.has_news = user_stock.stock.symbol in symbols_with_news
+    
+    return render_template('index.html', 
+                         stocks=user_stocks,
+                         form=form,
+                         indexes=indexes,
+                         user=user)
+
+@app.route('/api/stocks')
+@user_login_required
+def get_stocks():
+    user = User.query.get(session['user_id'])
+    
+    # Get user's stocks
+    user_stocks = UserStock.query.filter_by(user_id=user.id).all()
+    stock_data = [us.to_dict() for us in user_stocks]
+    
+    # Add index data
+    index_symbols = ['SPY', 'DIA', 'QQQ', 'IWM']
+    index_data = get_stock_data(index_symbols)
+    
+    # Get news for all symbols
+    all_symbols = [us.stock.symbol for us in user_stocks] + index_symbols
+    news_articles = get_news_for_symbols(all_symbols)
+    
+    # Create a set of symbols that have news
+    symbols_with_news = set()
+    for article in news_articles:
+        symbols_with_news.update(article.get('symbols', []))
+    
+    # Get current time for timestamp calculations
+    now = datetime.now(timezone.utc)
+    
+    # Combine the data
+    for symbol in index_symbols:
+        if symbol in index_data:
+            data = index_data[symbol]
+            timestamp = data['timestamp']
+            
+            if isinstance(timestamp, str):
+                timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            elif isinstance(timestamp, datetime):
+                if not timestamp.tzinfo:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+            
+            time_diff = now - timestamp
+            minutes = int(time_diff.total_seconds() / 60)
+            
+            friendly_time = "Just now" if minutes < 1 else f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+            
+            stock_data.append({
+                'symbol': symbol,
+                'name': {
+                    'SPY': 'S&P 500',
+                    'DIA': 'Dow Jones',
+                    'QQQ': 'NASDAQ',
+                    'IWM': 'Russell 2000'
+                }.get(symbol, symbol),
+                'current_price': data['price'],
+                'previous_close': data['previous_close'],
+                'price_change': data['price'] - data['previous_close'],
+                'price_change_percent': ((data['price'] - data['previous_close']) / data['previous_close']) * 100,
+                'last_updated': timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                'friendly_time': friendly_time,
+                'has_news': symbol in symbols_with_news
+            })
+    
+    return jsonify(stock_data)
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        user = User.query.filter_by(email=email, is_admin=True).first()
+        if user and user.check_password(password):
+            session['user_id'] = user.id
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            return redirect(url_for('admin_dashboard'))
+        
+        flash('Invalid credentials')
+    
+    return render_template('admin_login.html')
+
+@app.route('/admin/dashboard', methods=['GET', 'POST'])
+@admin_login_required
+def admin_dashboard():
+    form = CSRFForm()
+    admin = User.query.get(session['user_id'])
+    
+    if request.method == 'POST' and form.validate():
+        action = request.form.get('action', '')
+        
+        if action == 'create_admin':
+            email = request.form.get('email')
+            password = request.form.get('password')
+            first_name = request.form.get('first_name')
+            last_name = request.form.get('last_name')
+            
+            if email and password:
+                try:
+                    if User.query.filter_by(email=email).first():
+                        flash('Email already registered', 'error')
+                    else:
+                        new_admin = User(
+                            email=email,
+                            password=password,
+                            first_name=first_name,
+                            last_name=last_name,
+                            is_admin=True
+                        )
+                        db.session.add(new_admin)
+                        db.session.commit()
+                        flash('Admin user created successfully', 'success')
+                except Exception as e:
+                    flash(f'Error creating admin user: {str(e)}', 'error')
+            else:
+                flash('Email and password are required', 'error')
+        
+        elif action == 'delete_user':
+            user_id = request.form.get('user_id')
+            if user_id:
+                try:
+                    user = User.query.get(user_id)
+                    if user:
+                        db.session.delete(user)
+                        db.session.commit()
+                        flash('User deleted successfully', 'success')
+                    else:
+                        flash('User not found', 'error')
+                except Exception as e:
+                    flash(f'Error deleting user: {str(e)}', 'error')
+    
+    # Get all users for display
+    users = User.query.all()
+    
+    return render_template('admin_dashboard.html',
+                         users=users,
+                         form=form,
+                         admin=admin)
+
+@app.route('/user/dashboard', methods=['GET', 'POST'])
+@user_login_required
+def user_dashboard():
+    form = CSRFForm()
+    user = User.query.get(session['user_id'])
+    
+    if request.method == 'POST' and form.validate():
+        action = request.form.get('action', '')
+        
+        if action == 'update_credentials':
+            api_key = request.form.get('api_key')
+            secret_key = request.form.get('secret_key')
+            
+            if api_key and secret_key:
+                try:
+                    # Test the API keys
+                    data_client = StockHistoricalDataClient(
+                        api_key=api_key,
+                        secret_key=secret_key
+                    )
+                    
+                    trading_client = TradingClient(
+                        api_key=api_key,
+                        secret_key=secret_key,
+                        paper=True
+                    )
+                    
+                    # Test by getting account information
+                    account = trading_client.get_account()
+                    
+                    # Save the API keys
+                    credential = APICredential(
+                        user_id=user.id,
+                        api_key=api_key,
+                        secret_key=secret_key
+                    )
+                    db.session.add(credential)
+                    db.session.commit()
+                    
+                    flash('API credentials updated successfully', 'success')
+                except Exception as e:
+                    flash(f'Error validating API credentials: {str(e)}', 'error')
+            else:
+                flash('Both API key and secret key are required', 'error')
+        
+        elif action == 'remove_stock':
+            symbol = request.form.get('symbol', '').strip().upper()
+            if symbol:
+                try:
+                    user_stock = UserStock.query.join(Stock).filter(
+                        Stock.symbol == symbol,
+                        UserStock.user_id == user.id
+                    ).first()
+                    
+                    if user_stock:
+                        db.session.delete(user_stock)
+                        db.session.commit()
+                        flash(f'Stock {symbol} removed successfully', 'success')
+                    else:
+                        flash(f'Stock {symbol} not found', 'error')
+                except Exception as e:
+                    flash(f'Error removing stock: {str(e)}', 'error')
+            else:
+                flash('Stock symbol is required', 'error')
+    
+    current_creds = APICredential.get_active_credentials(user.id)
+    last_updated = None
+    if current_creds:
+        credential = APICredential.query.filter_by(user_id=user.id).order_by(APICredential.last_updated.desc()).first()
+        last_updated = credential.last_updated.strftime('%Y-%m-%d %H:%M:%S')
+    
+    user_stocks = UserStock.query.filter_by(user_id=user.id).all()
+    
+    return render_template('user_dashboard.html',
+                         current_key=current_creds['api_key'] if current_creds else None,
+                         current_secret=current_creds['secret_key'] if current_creds else None,
+                         last_updated=last_updated,
+                         stocks=user_stocks,
+                         form=form,
+                         user=user)
+
 def get_stock_data(symbols):
     """Get current stock data for the given symbols"""
     if alpaca_factory.is_simulation_mode:
         return alpaca_factory.get_stock_data(symbols)
-        
-    client = alpaca_factory.get_data_client()
+    
+    # Get the current user's credentials
+    user_id = session.get('user_id')
+    if not user_id:
+        return {}
+    
+    credentials = APICredential.get_active_credentials(user_id)
+    if not credentials:
+        return {}
+    
+    client = StockHistoricalDataClient(
+        api_key=credentials['api_key'],
+        secret_key=credentials['secret_key']
+    )
+    
     now = datetime.now(pytz.UTC)
     start = now - timedelta(days=2)
     
@@ -102,7 +453,11 @@ def get_stock_data(symbols):
     
     try:
         bars = client.get_stock_bars(request)
-        trading_client = alpaca_factory.get_trading_client()
+        trading_client = TradingClient(
+            api_key=credentials['api_key'],
+            secret_key=credentials['secret_key'],
+            paper=True
+        )
         assets = {asset.symbol: asset for asset in trading_client.get_all_assets()}
         
         result = {}
@@ -204,311 +559,6 @@ def background_update_task():
             print(f"[{datetime.now()}] Retrying in {retry_delay} seconds...")
             time.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, max_retry_delay)
-
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not session.get('admin_logged_in'):
-            return redirect(url_for('admin_login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    form = CSRFForm()
-    if request.method == 'POST' and form.validate():
-        symbol = request.form.get('symbol', '').strip().upper()
-        if symbol:
-            try:
-                # Check if stock already exists
-                if Stock.query.filter_by(symbol=symbol).first():
-                    flash(f'Stock {symbol} is already being tracked', 'error')
-                else:
-                    # Validate the symbol with Alpaca
-                    stock_data = get_stock_data([symbol])
-                    if not stock_data or symbol not in stock_data:
-                        raise ValueError(f"Could not fetch data for {symbol}")
-                    
-                    # Add the stock
-                    stock = Stock(symbol=symbol)
-                    db.session.add(stock)
-                    db.session.commit()
-                    flash(f'Stock {symbol} added successfully', 'success')
-            except Exception as e:
-                flash(f'Error adding stock: {str(e)}', 'error')
-        else:
-            flash('Stock symbol is required', 'error')
-        return redirect(url_for('index'))
-    
-    # Get market indexes data
-    index_symbols = ['SPY', 'DIA', 'QQQ', 'IWM']  # ETFs tracking S&P 500, Dow Jones, NASDAQ, and Russell 2000
-    index_data = get_stock_data(index_symbols)
-    
-    # Create a dictionary for easy template access
-    indexes = {symbol: index_data.get(symbol, {}) for symbol in index_symbols}
-    
-    # Get all tracked stocks
-    stocks = Stock.query.all()
-    
-    # Get news for all symbols
-    all_symbols = [stock.symbol for stock in stocks] + index_symbols
-    news_articles = get_news_for_symbols(all_symbols)
-    
-    # Create a set of symbols that have news
-    symbols_with_news = set()
-    for article in news_articles:
-        symbols_with_news.update(article.get('symbols', []))
-    
-    # Add has_news flag to each stock
-    for stock in stocks:
-        stock.has_news = stock.symbol in symbols_with_news
-    
-    return render_template('index.html', stocks=stocks, form=form, indexes=indexes)
-
-@app.route('/api/stocks')
-def get_stocks():
-    # Get both user stocks and indexes
-    stocks = Stock.query.all()
-    stock_data = [stock.to_dict() for stock in stocks]
-    
-    # Add index data
-    index_symbols = ['SPY', 'DIA', 'QQQ', 'IWM']
-    index_data = get_stock_data(index_symbols)
-    
-    # Get news for all symbols
-    all_symbols = [stock.symbol for stock in stocks] + index_symbols
-    news_articles = get_news_for_symbols(all_symbols)
-    
-    # Create a set of symbols that have news
-    symbols_with_news = set()
-    for article in news_articles:
-        symbols_with_news.update(article.get('symbols', []))
-    
-    # Get current time for timestamp calculations
-    now = datetime.now(timezone.utc)
-    
-    # Combine the data
-    for symbol in index_symbols:
-        if symbol in index_data:
-            data = index_data[symbol]
-            timestamp = data['timestamp']
-            
-            # Convert timestamp to datetime with timezone if needed
-            if isinstance(timestamp, str):
-                timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-            elif isinstance(timestamp, datetime):
-                if not timestamp.tzinfo:
-                    timestamp = timestamp.replace(tzinfo=timezone.utc)
-            
-            time_diff = now - timestamp
-            minutes = int(time_diff.total_seconds() / 60)
-            
-            friendly_time = "Just now" if minutes < 1 else f"{minutes} minute{'s' if minutes != 1 else ''} ago"
-            
-            stock_data.append({
-                'symbol': symbol,
-                'name': {
-                    'SPY': 'S&P 500',
-                    'DIA': 'Dow Jones',
-                    'QQQ': 'NASDAQ',
-                    'IWM': 'Russell 2000'
-                }.get(symbol, symbol),
-                'current_price': data['price'],
-                'previous_close': data['previous_close'],
-                'price_change': data['price'] - data['previous_close'],
-                'price_change_percent': ((data['price'] - data['previous_close']) / data['previous_close']) * 100,
-                'last_updated': timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                'friendly_time': friendly_time,
-                'has_news': symbol in symbols_with_news
-            })
-    
-    return jsonify(stock_data)
-
-@app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
-    form = CSRFForm()
-    if request.method == 'POST' and form.validate():
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        if (username == app.config['ADMIN_USERNAME'] and 
-            password == app.config['ADMIN_PASSWORD']):
-            session['admin_logged_in'] = True
-            return redirect(url_for('admin_dashboard'))
-        else:
-            flash('Invalid credentials')
-    
-    return render_template('admin_login.html', form=form)
-
-@app.route('/admin/dashboard', methods=['GET', 'POST'])
-@login_required
-def admin_dashboard():
-    form = CSRFForm()
-    if request.method == 'POST' and form.validate():
-        action = request.form.get('action', '')
-        
-        if action == 'update_key':
-            api_key = request.form.get('api_key')
-            secret_key = request.form.get('secret_key')
-            
-            if api_key and secret_key:
-                try:
-                    print(f"[{datetime.now()}] Testing new API credentials...")
-                    print(f"[{datetime.now()}] API Key (masked): {api_key[:4]}...{api_key[-4:]}")
-                    
-                    # Test the API keys with a simple request
-                    data_client = StockHistoricalDataClient(
-                        api_key=api_key,
-                        secret_key=secret_key
-                    )
-                    print(f"[{datetime.now()}] Data client initialized, testing with AAPL data...")
-                    
-                    # Test trading client as well
-                    trading_client = TradingClient(
-                        api_key=api_key,
-                        secret_key=secret_key,
-                        paper=True
-                    )
-                    print(f"[{datetime.now()}] Trading client initialized, testing connection...")
-                    
-                    # Test by getting account information
-                    account = trading_client.get_account()
-                    print(f"[{datetime.now()}] Successfully connected to Alpaca API")
-                    
-                    # Save the API keys
-                    print(f"[{datetime.now()}] Saving credentials to database...")
-                    credential = APICredential(api_key=api_key, secret_key=secret_key)
-                    db.session.add(credential)
-                    db.session.commit()
-                    print(f"[{datetime.now()}] Credentials saved successfully")
-                    
-                    flash('API credentials updated successfully', 'success')
-                except Exception as e:
-                    error_msg = f"Error validating API credentials: {str(e)}"
-                    print(f"[{datetime.now()}] {error_msg}")
-                    import traceback
-                    print(f"[{datetime.now()}] Traceback: {traceback.format_exc()}")
-                    flash(error_msg, 'error')
-            else:
-                flash('Both API key and secret key are required', 'error')
-        
-        elif action == 'add_stock':
-            symbol = request.form.get('symbol', '').strip().upper()
-            if symbol:
-                try:
-                    print(f"[{datetime.now()}] Attempting to add new stock: {symbol}")
-                    # Check if stock already exists
-                    if Stock.query.filter_by(symbol=symbol).first():
-                        print(f"[{datetime.now()}] Stock {symbol} already exists in database")
-                        flash(f'Stock {symbol} is already being tracked', 'error')
-                    else:
-                        # Validate the symbol with Alpaca
-                        print(f"[{datetime.now()}] Validating {symbol} with Alpaca API...")
-                        stock_data = get_stock_data([symbol])
-                        if not stock_data or symbol not in stock_data:
-                            raise ValueError(f"Could not fetch data for {symbol}")
-                        
-                        # Add the stock
-                        print(f"[{datetime.now()}] Adding {symbol} to database...")
-                        stock = Stock(symbol=symbol)
-                        db.session.add(stock)
-                        db.session.commit()
-                        print(f"[{datetime.now()}] Successfully added {symbol}")
-                        flash(f'Stock {symbol} added successfully', 'success')
-                except Exception as e:
-                    error_msg = f"Error adding stock: {str(e)}"
-                    print(f"[{datetime.now()}] {error_msg}")
-                    import traceback
-                    print(f"[{datetime.now()}] Traceback: {traceback.format_exc()}")
-                    flash(error_msg, 'error')
-            else:
-                flash('Stock symbol is required', 'error')
-        
-        elif action == 'remove_stock':
-            symbol = request.form.get('symbol', '').strip().upper()
-            if symbol:
-                try:
-                    print(f"[{datetime.now()}] Attempting to remove stock: {symbol}")
-                    stock = Stock.query.filter_by(symbol=symbol).first()
-                    if stock:
-                        db.session.delete(stock)
-                        db.session.commit()
-                        print(f"[{datetime.now()}] Successfully removed {symbol}")
-                        flash(f'Stock {symbol} removed successfully', 'success')
-                    else:
-                        print(f"[{datetime.now()}] Stock {symbol} not found in database")
-                        flash(f'Stock {symbol} not found', 'error')
-                except Exception as e:
-                    error_msg = f"Error removing stock: {str(e)}"
-                    print(f"[{datetime.now()}] {error_msg}")
-                    import traceback
-                    print(f"[{datetime.now()}] Traceback: {traceback.format_exc()}")
-                    flash(error_msg, 'error')
-            else:
-                flash('Stock symbol is required', 'error')
-    
-    current_creds = APICredential.get_active_credentials()
-    last_updated = None
-    if current_creds:
-        credential = APICredential.query.order_by(APICredential.last_updated.desc()).first()
-        last_updated = credential.last_updated.strftime('%Y-%m-%d %H:%M:%S')
-    
-    stocks = Stock.query.all()
-    
-    # In development mode, pre-populate with environment variables
-    env_api_key = None
-    env_secret_key = None
-    if app.debug:
-        env_api_key = app.config['ALPACA_API_KEY']
-        env_secret_key = app.config['ALPACA_SECRET_KEY']
-    
-    return render_template('admin_dashboard.html', 
-                         current_key=current_creds['api_key'] if current_creds else None,
-                         current_secret=current_creds['secret_key'] if current_creds else None,
-                         last_updated=last_updated,
-                         stocks=stocks,
-                         form=form,
-                         env_api_key=env_api_key,
-                         env_secret_key=env_secret_key)
-
-@app.route('/admin/logout', methods=['POST'])
-@login_required
-def admin_logout():
-    form = CSRFForm()
-    if form.validate():
-        session.pop('admin_logged_in', None)
-    return redirect(url_for('admin_login'))
-
-@app.route('/admin/update-stocks', methods=['POST'])
-@login_required
-def update_stocks():
-    """Manual trigger for updating stock prices"""
-    form = CSRFForm()
-    if form.validate():
-        with app.app_context():
-            update_stock_prices(manual=True)
-    return redirect(url_for('admin_dashboard'))
-
-@app.route('/admin/toggle_simulation', methods=['POST'])
-@login_required
-def toggle_simulation():
-    """Toggle simulation mode"""
-    if not request.form.get('csrf_token') or not validate_csrf(request.form.get('csrf_token')):
-        flash('Invalid CSRF token', 'error')
-        return redirect(url_for('admin_dashboard'))
-    
-    current_mode = app.config['SIMULATION_MODE'].lower() == 'true'
-    new_mode = not current_mode
-    
-    # Update the environment variable
-    os.environ['SIMULATION_MODE'] = str(new_mode).lower()
-    app.config['SIMULATION_MODE'] = str(new_mode).lower()
-    
-    # Reinitialize Alpaca services with new mode
-    app.alpaca_factory = initialize_alpaca()
-    
-    flash(f"Simulation mode {'enabled' if new_mode else 'disabled'}", 'success')
-    return redirect(url_for('admin_dashboard'))
 
 def get_news_for_symbols(symbols):
     """Get news articles for the given symbols"""

@@ -1,174 +1,93 @@
 <!DOCTYPE html>
-<html lang="en" class="light">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dad's Stocks</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Dad's Stocks Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'brand': {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        },
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        .stock-card {
-            transition: transform 0.2s;
-        }
-        .stock-card:hover {
-            transform: translateY(-5px);
-        }
-        .positive {
-            color: #10B981;
-        }
-        .negative {
-            color: #EF4444;
-        }
-        .logo {
-            height: 40px;
-            width: auto;
-        }
-        /* Dark mode styles */
-        .dark {
-            color-scheme: dark;
-        }
-        .dark body {
-            background-color: #111827;
-        }
-        .dark .bg-white {
-            background-color: #1F2937;
-        }
-        .dark .text-gray-800 {
-            color: #F3F4F6;
-        }
-        .dark .text-gray-600 {
-            color: #D1D5DB;
-        }
-        .dark .bg-gray-100 {
-            background-color: #111827;
-        }
-        .dark .bg-gray-50 {
-            background-color: #1F2937;
-        }
-        .dark .hover\:bg-gray-100:hover {
-            background-color: #374151;
-        }
-        .dark .shadow-lg {
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.25);
-        }
-        .dark .stock-card {
-            background-color: #1F2937;
-        }
-        .dark .bg-green-50 {
-            background-color: rgba(16, 185, 129, 0.1);
-        }
-        .dark .bg-red-50 {
-            background-color: rgba(239, 68, 68, 0.1);
-        }
+        [x-cloak] { display: none !important; }
+        .positive { color: #059669; }
+        .negative { color: #dc2626; }
     </style>
 </head>
-<body class="flex flex-col min-h-screen bg-gray-100">
-    <nav class="bg-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center space-x-3">
-                        <img src="{{ url_for('static', filename='logo.svg') }}" alt="Dad's Stocks Logo" class="logo">
-                        <h1 class="text-xl font-bold text-gray-800">Dad's Stocks</h1>
-                    </div>
-                </div>
-                <div class="flex items-center space-x-2">
-                    <!-- Dark Mode Toggle -->
-                    <button id="theme-toggle" 
-                            class="text-gray-600 hover:text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors"
-                            title="Toggle Dark Mode">
-                        <!-- Sun icon -->
-                        <svg id="sun-icon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                  d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z">
-                            </path>
-                        </svg>
-                        <!-- Moon icon -->
-                        <svg id="moon-icon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                  d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z">
-                            </path>
-                        </svg>
-                    </button>
-                    <!-- Admin Link -->
-                    <a href="{{ url_for('admin_login') }}" 
-                       class="text-gray-600 hover:text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors"
-                       title="Admin Dashboard">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                  d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z">
-                            </path>
-                        </svg>
-                    </a>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <main class="flex-grow max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        {% block content %}{% endblock %}
-    </main>
-
-    <footer class="bg-white shadow-lg mt-8">
-        <div class="max-w-7xl mx-auto py-4 px-4">
-            <p class="text-center text-gray-600">© 2024 Stock Dashboard. All rights reserved.</p>
-        </div>
-    </footer>
+<body class="min-h-screen bg-gray-50">
+    {% block content %}{% endblock %}
 
     <script>
-        // Theme toggle functionality
-        const html = document.documentElement;
-        const themeToggle = document.getElementById('theme-toggle');
-        const sunIcon = document.getElementById('sun-icon');
-        const moonIcon = document.getElementById('moon-icon');
-
-        // Function to set theme
-        function setTheme(isDark) {
-            if (isDark) {
-                html.classList.add('dark');
-                sunIcon.classList.remove('hidden');
-                moonIcon.classList.add('hidden');
-            } else {
-                html.classList.remove('dark');
-                sunIcon.classList.add('hidden');
-                moonIcon.classList.remove('hidden');
-            }
-            // Save preference to cookie
-            document.cookie = `darkMode=${isDark}; path=/; max-age=31536000`; // 1 year
+        // Common JavaScript functions
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            }).format(value);
         }
 
-        // Initialize theme from cookie
-        function initializeTheme() {
-            const cookieValue = document.cookie.split('; ')
-                .find(row => row.startsWith('darkMode='))
-                ?.split('=')[1];
-            
-            // Check if user has a saved preference
-            if (cookieValue !== undefined) {
-                setTheme(cookieValue === 'true');
-            } else {
-                // Check system preference
-                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                setTheme(prefersDark);
-            }
+        function formatPercent(value) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'percent',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(value / 100);
         }
 
-        // Toggle theme when button is clicked
-        themeToggle.addEventListener('click', () => {
-            const isDark = !html.classList.contains('dark');
-            setTheme(isDark);
-        });
+        function formatDateTime(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            return date.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'numeric',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: 'numeric',
+                second: 'numeric',
+                timeZoneName: 'short'
+            });
+        }
 
-        // Initialize theme on page load
-        initializeTheme();
+        function getRelativeTimeString(date) {
+            const now = new Date();
+            const diffInSeconds = Math.floor((now - date) / 1000);
 
-        // Listen for system theme changes
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-            if (!document.cookie.includes('darkMode=')) {
-                setTheme(e.matches);
+            if (diffInSeconds < 60) {
+                return 'Just now';
             }
-        });
+
+            const diffInMinutes = Math.floor(diffInSeconds / 60);
+            if (diffInMinutes < 60) {
+                return `${diffInMinutes} minute${diffInMinutes === 1 ? '' : 's'} ago`;
+            }
+
+            const diffInHours = Math.floor(diffInMinutes / 60);
+            if (diffInHours < 24) {
+                return `${diffInHours} hour${diffInHours === 1 ? '' : 's'} ago`;
+            }
+
+            const diffInDays = Math.floor(diffInHours / 24);
+            return `${diffInDays} day${diffInDays === 1 ? '' : 's'} ago`;
+        }
     </script>
 </body>
 </html> 
