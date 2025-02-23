@@ -37,7 +37,8 @@ class MockAlpacaService:
             'META': MockAsset('META', 'Meta Platforms Inc.'),
             'SPY': MockAsset('SPY', 'SPDR S&P 500 ETF Trust'),
             'DIA': MockAsset('DIA', 'SPDR Dow Jones Industrial Average ETF'),
-            'QQQ': MockAsset('QQQ', 'Invesco QQQ Trust')
+            'QQQ': MockAsset('QQQ', 'Invesco QQQ Trust'),
+            'IWM': MockAsset('IWM', 'iShares Russell 2000 ETF')
         }
         
         # Initialize with some realistic base prices
@@ -49,7 +50,8 @@ class MockAlpacaService:
             'META': 485.0,
             'SPY': 510.0,
             'DIA': 385.0,
-            'QQQ': 430.0
+            'QQQ': 430.0,
+            'IWM': 200.0
         }
         
         # Initialize current prices and previous closes

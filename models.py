@@ -42,9 +42,16 @@ class Stock(db.Model):
             minutes = int(time_diff.total_seconds() / 60)
             
             if minutes < 1:
-                friendly_time = "Just now"
+                friendly_time = "Just a moment ago"
+            elif minutes == 1:
+                friendly_time = "1 minute ago"
+            elif minutes < 60:
+                friendly_time = f"{minutes} minutes ago"
+            elif minutes < 120:
+                friendly_time = "1 hour ago"
             else:
-                friendly_time = f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+                hours = minutes // 60
+                friendly_time = f"{hours} hours ago"
         else:
             friendly_time = "Never"
             last_updated_local = None

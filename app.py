@@ -241,7 +241,7 @@ def index():
         return redirect(url_for('index'))
     
     # Get market indexes data
-    index_symbols = ['SPY', 'DIA', 'QQQ']  # ETFs tracking S&P 500, Dow Jones, and NASDAQ
+    index_symbols = ['SPY', 'DIA', 'QQQ', 'IWM']  # ETFs tracking S&P 500, Dow Jones, NASDAQ, and Russell 2000
     index_data = get_stock_data(index_symbols)
     
     # Create a dictionary for easy template access
@@ -272,7 +272,7 @@ def get_stocks():
     stock_data = [stock.to_dict() for stock in stocks]
     
     # Add index data
-    index_symbols = ['SPY', 'DIA', 'QQQ']
+    index_symbols = ['SPY', 'DIA', 'QQQ', 'IWM']
     index_data = get_stock_data(index_symbols)
     
     # Get news for all symbols
@@ -310,7 +310,8 @@ def get_stocks():
                 'name': {
                     'SPY': 'S&P 500',
                     'DIA': 'Dow Jones',
-                    'QQQ': 'NASDAQ'
+                    'QQQ': 'NASDAQ',
+                    'IWM': 'Russell 2000'
                 }.get(symbol, symbol),
                 'current_price': data['price'],
                 'previous_close': data['previous_close'],
@@ -553,4 +554,4 @@ def initialize():
         _is_initialized = True
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001) 
+    app.run(debug=True, port=5001, host='0.0.0.0') 

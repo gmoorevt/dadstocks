@@ -41,4 +41,17 @@ ENV/
 !.env.example
 
 # Logs
+*.log
+
+# Docker
+.docker/
+docker-compose.override.yml
+.env.docker
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
 *.log 

@@ -1,0 +1,30 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    volumes:
+      - .:/app
+      - data:/app/instance
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - PYTHONUNBUFFERED=1
+      - SIMULATION_MODE=true
+      - SECRET_KEY=dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    command: >
+      sh -c "python init_db.py &&
+             python app.py"
+
+volumes:
+  data: {} 
