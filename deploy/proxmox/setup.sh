@@ -175,7 +175,34 @@ msg_info "Checking for Ubuntu 22.04 LXC template..."
 TEMPLATE_PATH="/var/lib/vz/template/cache/ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
 if [ ! -f "$TEMPLATE_PATH" ]; then
     msg_info "Downloading Ubuntu 22.04 LXC template..."
-    pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.gz >/dev/null 2>&1
+    if ! pveam update >/dev/null 2>&1; then
+        msg_error "Failed to update template list"
+        msg_debug "Error updating template list. Try running 'pveam update' manually"
+        exit 1
+    fi
+    
+    # List available templates for debugging
+    if [ "$DEBUG" = true ]; then
+        msg_debug "Available templates:"
+        pveam available | grep -i ubuntu
+    fi
+    
+    # Try to download the template
+    if ! pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.gz 2>&1; then
+        msg_error "Failed to download Ubuntu template"
+        msg_debug "Template download failed. Verify template name with 'pveam available'"
+        msg_debug "You can try downloading manually with:"
+        msg_debug "pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
+        exit 1
+    fi
+    
+    # Verify the download
+    if [ ! -f "$TEMPLATE_PATH" ]; then
+        msg_error "Template download appeared to succeed but file is missing"
+        msg_debug "Expected template at: $TEMPLATE_PATH"
+        msg_debug "Check storage configuration and permissions"
+        exit 1
+    fi
 fi
 msg_ok "Ubuntu 22.04 LXC template is available"
 
