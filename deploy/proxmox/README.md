@@ -16,42 +16,52 @@ This guide explains how to deploy Dad's Stocks Dashboard in a production environ
    scp setup.sh root@your-proxmox-host:/root/
    ```
 
-2. Edit the configuration variables in `setup.sh`:
-   - `CT_ID`: Unique container ID
-   - `CT_HOSTNAME`: Container hostname
-   - `CT_PASSWORD`: Secure container root password
-   - `CT_NETWORK_IP`: Container IP address
-   - `CT_NETWORK_GW`: Network gateway
-
-3. Run the script on your Proxmox host:
+2. Make the script executable and run it:
    ```bash
    chmod +x setup.sh
    ./setup.sh
    ```
 
-4. After deployment, update the Alpaca API credentials:
-   ```bash
-   pct exec <CT_ID> -- nano /opt/dadstocks/.env
-   ```
+3. Follow the interactive prompts to configure:
+   - Container settings (ID, hostname, password)
+   - Resource allocation (memory, swap, storage)
+   - Network configuration (IP address, gateway)
+   - Alpaca API credentials
+
+The script will validate your inputs and provide clear feedback throughout the process.
 
 ## Configuration Options
 
-### Memory and Storage
-- `CT_MEMORY`: Container memory limit (default: 2GB)
-- `CT_SWAP`: Container swap size (default: 512MB)
-- `CT_STORAGE`: Proxmox storage location (default: local-lvm)
+### Container Settings
+- Container ID: Unique identifier (default: 1000)
+- Hostname: Container name (default: dadstocks)
+- Root Password: Secure password for container access
 
-### Network
-- Container uses DHCP by default
-- Nginx configured to listen on port 80
-- Application runs on port 5001 internally
+### Resource Allocation
+- Memory: Container memory limit in MB (default: 2048)
+- Swap: Container swap size in MB (default: 512)
+- Storage: Proxmox storage location (default: local-lvm)
+
+### Network Configuration
+- IP Address: Container IP in CIDR format (e.g., 192.168.1.100/24)
+- Gateway: Network gateway IP address
+
+### Application Settings
+- Alpaca API Key: Your Alpaca API key
+- Alpaca Secret Key: Your Alpaca API secret key
+- Admin credentials are automatically generated and displayed after deployment
 
 ## Security Notes
 
-1. Change the default admin password in `.env`
-2. Consider setting up SSL/TLS with Let's Encrypt
-3. Configure firewall rules as needed
-4. Keep the system and application updated
+1. The script automatically generates:
+   - A secure random SECRET_KEY for Flask
+   - A random admin password
+   - Secure container configuration
+
+2. Additional security considerations:
+   - Consider setting up SSL/TLS with Let's Encrypt
+   - Configure firewall rules as needed
+   - Keep the system and application updated
 
 ## Maintenance
 
@@ -104,6 +114,16 @@ pct exec <CT_ID> -- tar -czf /root/dadstocks-backup.tar.gz /opt/dadstocks/instan
    ```bash
    pct exec <CT_ID> -- cd /opt/dadstocks && docker-compose down -v && docker-compose up -d
    ```
+
+## Error Messages
+
+The script includes comprehensive error checking and will display clear error messages if:
+- The script is not run on a Proxmox host
+- Container creation fails
+- Package installation fails
+- Docker or Docker Compose installation fails
+- Repository cloning fails
+- Application startup fails
 
 ## Support
 
