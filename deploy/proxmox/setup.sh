@@ -167,6 +167,36 @@ get_input() {
     echo "$value"
 }
 
+# Function to run commands in container with error handling
+run_in_container() {
+    local ct_id=$1
+    local command=$2
+    local error_msg=$3
+    
+    if ! pct exec "$ct_id" -- bash -c "$command"; then
+        msg_error "$error_msg"
+        return 1
+    fi
+    return 0
+}
+
+# Function to check container status
+check_container_status() {
+    local ct_id=$1
+    local max_attempts=30
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        if pct status "$ct_id" 2>/dev/null | grep -q "status: running"; then
+            return 0
+        fi
+        msg_debug "Waiting for container to start (attempt $attempt/$max_attempts)"
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+    return 1
+}
+
 # Display header
 header_info
 
@@ -175,35 +205,49 @@ msg_info "Checking for Ubuntu 22.04 LXC template..."
 TEMPLATE_PATH="/var/lib/vz/template/cache/ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
 if [ ! -f "$TEMPLATE_PATH" ]; then
     msg_info "Downloading Ubuntu 22.04 LXC template..."
-    if ! pveam update >/dev/null 2>&1; then
+    
+    # Update template list with error handling
+    msg_debug "Updating template list..."
+    if ! pveam update 2>&1; then
         msg_error "Failed to update template list"
-        msg_debug "Error updating template list. Try running 'pveam update' manually"
+        msg_debug "Try running: pveam update"
         exit 1
     fi
     
     # List available templates for debugging
     if [ "$DEBUG" = true ]; then
         msg_debug "Available templates:"
-        pveam available | grep -i ubuntu
+        pveam available -section system | grep -i ubuntu
     fi
     
-    # Try to download the template
-    if ! pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.gz 2>&1; then
+    # Try to download the template with error handling
+    msg_debug "Downloading template..."
+    if ! pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.gz; then
         msg_error "Failed to download Ubuntu template"
-        msg_debug "Template download failed. Verify template name with 'pveam available'"
-        msg_debug "You can try downloading manually with:"
-        msg_debug "pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
+        msg_debug "Available templates:"
+        pveam available -section system | grep -i ubuntu
         exit 1
     fi
     
     # Verify the download
     if [ ! -f "$TEMPLATE_PATH" ]; then
-        msg_error "Template download appeared to succeed but file is missing"
+        msg_error "Template download failed - file not found"
         msg_debug "Expected template at: $TEMPLATE_PATH"
-        msg_debug "Check storage configuration and permissions"
+        msg_debug "Storage location might be incorrect or insufficient permissions"
+        ls -l /var/lib/vz/template/cache/
         exit 1
     fi
 fi
+
+# Verify template is valid
+if ! tar -tzf "$TEMPLATE_PATH" >/dev/null 2>&1; then
+    msg_error "Template file is corrupted"
+    msg_debug "Try removing and redownloading:"
+    msg_debug "rm $TEMPLATE_PATH"
+    msg_debug "pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
+    exit 1
+fi
+
 msg_ok "Ubuntu 22.04 LXC template is available"
 
 # Get configuration values
