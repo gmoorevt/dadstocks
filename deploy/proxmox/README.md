@@ -7,7 +7,7 @@ This guide explains how to deploy Dad's Stocks Dashboard in a production environ
 Copy and paste this line into your Proxmox shell:
 
 ```bash
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/gmoorevt/dadstocks/main/deploy/proxmox/setup.sh)"
+bash -c "$(wget -qLO - https://github.com/gmoorevt/dadstocks/raw/main/deploy/proxmox/setup.sh)"
 ```
 
 ## Prerequisites
