@@ -2,6 +2,14 @@
 
 This guide explains how to deploy Dad's Stocks Dashboard in a production environment using Proxmox VE.
 
+## Quick Installation
+
+Copy and paste this line into your Proxmox shell:
+
+```bash
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/gmoorevt/dadstocks/main/deploy/proxmox/setup.sh)"
+```
+
 ## Prerequisites
 
 - Proxmox VE 7.0 or later
